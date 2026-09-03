@@ -42,9 +42,15 @@ VALID_INTENTS = {k for k in eval_prompts if not k.isupper()}
 THRESHOLD = 0.70
 
 
-def run_eval(endpoint: str) -> int:
+def run_eval(endpoint: str, is_smoke: bool = False) -> int:
     results = []
-    for expected_label, prompt in eval_prompts.items():
+    
+    # Convert dict to list so it can be sliced for a quick test
+    items_to_run = list(eval_prompts.items())
+    if is_smoke:
+        items_to_run = items_to_run[:3] 
+
+    for expected_label, prompt in items_to_run:
         try:
             resp = requests.post(endpoint, json={"user_query": prompt}, timeout=600)
             data = resp.json()
@@ -72,9 +78,10 @@ def run_eval(endpoint: str) -> int:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--endpoint", required=True)
+    parser.add_argument("--smoke", action="store_true") 
     args = parser.parse_args()
 
-    n_correct = run_eval(args.endpoint)
+    n_correct = run_eval(args.endpoint, is_smoke=args.smoke)
     pass_rate = n_correct / len(VALID_INTENTS)
     print(f"Pass rate: {pass_rate:.1%} (threshold: {THRESHOLD:.0%})")
 
