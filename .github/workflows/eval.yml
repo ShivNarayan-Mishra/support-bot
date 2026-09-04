@@ -27,12 +27,12 @@ jobs:
 
       - name: Run smoke test (on every push)
         if: github.event_name == 'push'
-        run: python eval_harness.py --endpoint ${{ secrets.EC2_ENDPOINT }}/predict --smoke
+        run: python -u eval_harness.py --endpoint ${{ secrets.EC2_ENDPOINT }}/predict --smoke
 
       - name: Run full suite (manual trigger only)
         if: github.event_name == 'workflow_dispatch' && inputs.full_suite
-        run: python eval_harness.py --endpoint ${{ secrets.EC2_ENDPOINT }}/predict
+        run: python -u eval_harness.py --endpoint ${{ secrets.EC2_ENDPOINT }}/predict
 
       - name: Run smoke test (manual trigger, default)
         if: github.event_name == 'workflow_dispatch' && !inputs.full_suite
-        run: python eval_harness.py --endpoint ${{ secrets.EC2_ENDPOINT }}/predict --smoke
+        run: python -u eval_harness.py --endpoint ${{ secrets.EC2_ENDPOINT }}/predict --smoke

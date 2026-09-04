@@ -6,14 +6,14 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
-from llama_cpp import Llama 
+from llama_cpp import Llama
 
 from db import init_db, log_request
 
 GGUF_REPO_ID = "Etasha/support_bot_gguf"
-GGUF_FILENAME = "Llama-3.2-3B-Instruct.Q4_K_M.gguf"  
-MAX_NEW_TOKENS = 256
-N_CTX = 2048 
+GGUF_FILENAME = "Llama-3.2-3B-Instruct.Q4_K_M.gguf" 
+MAX_NEW_TOKENS = 350  
+N_CTX = 2048  
 
 SYSTEM_PROMPT = (
     "You are a customer support assistant. For every user message, respond with ONLY a JSON object "
@@ -45,6 +45,9 @@ DOMAIN_KEYWORDS = {
     "shipping", "ship", "delivery", "deliver", "track", "tracking", "package", "shipment",
     "address", "subscribe", "subscription", "newsletter", "complaint", "review",
     "feedback", "support", "agent", "human", "customer service", "cancel my",
+    # added after CI caught these as real false-positive OOD rejections:
+    "person", "someone", "representative", "premium", "basic plan", "upgrade",
+    "downgrade", "plan", "membership",
 }
 
 
@@ -64,8 +67,6 @@ state = ModelState()
 async def lifespan(app: FastAPI):
     init_db()
     print(f"Loading GGUF model {GGUF_REPO_ID}/{GGUF_FILENAME}...")
-    # LoRA adapter is already baked into these weights via the earlier merge + GGUF export,
-    # so this is just one model, not base+adapter like the old transformers version
     state.llm = Llama.from_pretrained(
         repo_id=GGUF_REPO_ID,
         filename=GGUF_FILENAME,
