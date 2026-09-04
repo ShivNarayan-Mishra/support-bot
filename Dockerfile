@@ -1,19 +1,15 @@
-# slim is very lightweight with just the amount of debian required to run python
 FROM python:3.11-slim
-
-# uv was used due to its efficiency. This pulls the pre compiled binary from its official image.
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-# specify the working directory inside the container
 WORKDIR /app
 
-# since docker caches layers the copies are staggered
+# llama-cpp-python compiles from C++ source if no matching pre-built wheel exists -
+# slim doesn't ship a compiler by default, so this is needed for a reliable build
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential cmake \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt .
-
-# Install dependencies using the pre-built CPU wheel for llama-cpp-python
-RUN uv pip install --system --no-cache-dir -r requirements.txt \
-    --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
-
-COPY main.py db.py .
+RUN uv pip install --system --no-cache-dir -r requirements.txt
+COPY main.py db.py ./
 
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
