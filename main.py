@@ -1,25 +1,20 @@
+import json
 import re
 import time
 import uuid
 from contextlib import asynccontextmanager
 
-import torch
-
-# container was reporting 1 thread despite 2 vCPUs being available, forcing it explicitly
-torch.set_num_threads(2)
-
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
-from transformers import AutoModelForCausalLM, AutoTokenizer
-from peft import PeftModel
+from llama_cpp import Llama 
 
 from db import init_db, log_request
 
-BASE_MODEL_ID = "unsloth/Llama-3.2-3B-Instruct"  # ungated mirror, same weights as meta-llama's
-ADAPTER_ID = "Etasha/support_bot"
-MAX_NEW_TOKENS = 256  # 128 was tried, cut replies off mid-JSON, causing invalid_json failures
+GGUF_REPO_ID = "Etasha/support_bot_gguf"
+GGUF_FILENAME = "Llama-3.2-3B-Instruct.Q4_K_M.gguf"  
+MAX_NEW_TOKENS = 256
+N_CTX = 2048 
 
-# same prompt the model was trained on, kept verbatim so it doesn't drift from training
 SYSTEM_PROMPT = (
     "You are a customer support assistant. For every user message, respond with ONLY a JSON object "
     "with keys: category, intent, reply. Do not include any text outside the JSON object. "
@@ -41,14 +36,8 @@ VALID_INTENTS = {
     "track_order", "track_refund",
 }
 
-# category whitelist isn't enforced - only 20/27 intents are in the docs, intent is what
-# actually drives routing anyway, so this stays a soft non-empty-string check
-TORCH_DTYPE = torch.float16
-
 ID_PATTERN = re.compile(r"\b(ORD|INV|TRK|REF)-\d+\b")
 
-# keyword gate runs before the model so obviously off-topic queries skip the ~2min generation
-# cost entirely. coarse heuristic - a real query with none of these words could get misgated
 DOMAIN_KEYWORDS = {
     "order", "orders", "cancel", "cancellation", "refund", "return", "returns",
     "account", "password", "login", "log in", "sign up", "signup", "register", "registration",
@@ -65,8 +54,7 @@ def looks_out_of_domain(query: str) -> bool:
 
 
 class ModelState:
-    tokenizer = None
-    model = None
+    llm = None
 
 
 state = ModelState()
@@ -74,22 +62,17 @@ state = ModelState()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # loads once at startup, not per-request - reloading a multi-GB model per call
-    # would be unusable
     init_db()
-    print(f"Loading base model {BASE_MODEL_ID} + adapter {ADAPTER_ID} (dtype={TORCH_DTYPE}, CPU)...")
-    print(f"torch.get_num_threads() = {torch.get_num_threads()}")
-    state.tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_ID)
-    base = AutoModelForCausalLM.from_pretrained(
-        BASE_MODEL_ID,
-        dtype=TORCH_DTYPE,
-        low_cpu_mem_usage=True,  # avoids briefly holding a full fp32 copy during load
+    print(f"Loading GGUF model {GGUF_REPO_ID}/{GGUF_FILENAME}...")
+    # LoRA adapter is already baked into these weights via the earlier merge + GGUF export,
+    # so this is just one model, not base+adapter like the old transformers version
+    state.llm = Llama.from_pretrained(
+        repo_id=GGUF_REPO_ID,
+        filename=GGUF_FILENAME,
+        n_ctx=N_CTX,
+        n_threads=2,  # matches t3.large vCPU count
+        verbose=False,
     )
-    peft_model = PeftModel.from_pretrained(base, ADAPTER_ID)
-    peft_model.eval()
-    # NOT merging adapter into base - merge_and_unload() caused severe memory thrashing
-    # on this instance's RAM (see running log). keeping base+adapter separate instead.
-    state.model = peft_model
     print("Model loaded.")
     yield
 
@@ -107,7 +90,7 @@ class QueryResponse(BaseModel):
     intent: str | None = None
     reply: str | None = None
     valid_json: bool
-    guardrail_outcome: str  # "pass" | "fallback"
+    guardrail_outcome: str
     fallback_reason: str | None = None
     latency_ms: float
 
@@ -117,7 +100,6 @@ def extract_id_tokens(text: str) -> set[str]:
 
 
 def check_fabricated_ids(user_query: str, reply_text: str) -> tuple[bool, str | None]:
-    # catches the model inventing an order/tracking ID that the user never actually gave it
     provided_ids = extract_id_tokens(user_query)
     reply_ids = extract_id_tokens(reply_text)
     fabricated = reply_ids - provided_ids
@@ -127,8 +109,6 @@ def check_fabricated_ids(user_query: str, reply_text: str) -> tuple[bool, str | 
 
 
 def run_judge(parsed: dict | None) -> tuple[bool, str | None]:
-    # schema + taxonomy check only. exact-match accuracy only exists in the offline eval
-    # suite, since live traffic has no ground-truth label to check against
     if parsed is None:
         return False, "invalid_json"
     if not all(k in parsed for k in ("category", "intent", "reply")):
@@ -141,26 +121,16 @@ def run_judge(parsed: dict | None) -> tuple[bool, str | None]:
 
 
 def generate_structured_reply(user_query: str) -> tuple[dict | None, str]:
-    import json
-
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": user_query},
     ]
-    # apply_chat_template matters - hand-building this string doesn't match what the
-    # model actually trained on
-    prompt_text = state.tokenizer.apply_chat_template(
-        messages, tokenize=False, add_generation_prompt=True
+    output = state.llm.create_chat_completion(
+        messages=messages,
+        max_tokens=MAX_NEW_TOKENS,
+        temperature=0.3,
     )
-    inputs = state.tokenizer(prompt_text, return_tensors="pt")
-    input_len = inputs["input_ids"].shape[1]
-
-    with torch.no_grad():
-        output_ids = state.model.generate(**inputs, max_new_tokens=MAX_NEW_TOKENS)
-
-    # slice off the echoed prompt, only decode what the model actually generated
-    new_tokens = output_ids[0][input_len:]
-    raw_output = state.tokenizer.decode(new_tokens, skip_special_tokens=True)
+    raw_output = output["choices"][0]["message"]["content"]
 
     try:
         json_start = raw_output.index("{")
@@ -209,8 +179,6 @@ async def predict(req: QueryRequest) -> QueryResponse:
     outcome = "pass" if (judge_ok and ids_ok) else "fallback"
     fallback_reason = None if outcome == "pass" else (judge_reason or ids_reason)
 
-    # log every request, pass or fallback - a logging system that only records
-    # successes can't tell you how often things are actually failing
     log_request(
         request_id=request_id, latency_ms=latency_ms, user_query=req.user_query,
         category=parsed.get("category") if valid_json else None,
@@ -237,4 +205,4 @@ async def predict(req: QueryRequest) -> QueryResponse:
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "model_loaded": state.model is not None}
+    return {"status": "ok", "model_loaded": state.llm is not None}

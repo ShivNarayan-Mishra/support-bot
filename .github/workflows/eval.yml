@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       full_suite:
-        description: "Run full 30-prompt suite instead of smoke test (2+ hours at current latency)"
+        description: "Run full 30-prompt suite instead of 1/3 smoke test"
         type: boolean
         default: false
 

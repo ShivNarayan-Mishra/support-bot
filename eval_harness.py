@@ -38,19 +38,17 @@ eval_prompts = {
     "ADVERSARIAL_TYPOS": "y cnat i cancell da ordr???",
 }
 
-VALID_INTENTS = {k for k in eval_prompts if not k.isupper()}
 THRESHOLD = 0.70
 
 
-def run_eval(endpoint: str, is_smoke: bool = False) -> int:
-    results = []
-    
-    # Convert dict to list so it can be sliced for a quick test
-    items_to_run = list(eval_prompts.items())
-    if is_smoke:
-        items_to_run = items_to_run[:3] 
+def run_eval(endpoint: str, smoke: bool = False) -> tuple[int, int]:
+    # smoke = every 3rd prompt (1/3 of the full list), evenly spread rather than
+    # just the first few, so it still covers a mix of intents and edge cases
+    items = list(eval_prompts.items())[::3] if smoke else list(eval_prompts.items())
+    valid_intents = {k for k, _ in items if not k.isupper()}
 
-    for expected_label, prompt in items_to_run:
+    results = []
+    for expected_label, prompt in items:
         try:
             resp = requests.post(endpoint, json={"user_query": prompt}, timeout=600)
             data = resp.json()
@@ -62,7 +60,7 @@ def run_eval(endpoint: str, is_smoke: bool = False) -> int:
         outcome = data.get("guardrail_outcome")
         intent = data.get("intent")
 
-        if expected_label in VALID_INTENTS:
+        if expected_label in valid_intents:
             status = "CORRECT" if (outcome == "pass" and intent == expected_label) else "WRONG"
         else:
             status = "CORRECTLY_HANDLED" if outcome == "fallback" else "SLIPPED_THROUGH"
@@ -70,19 +68,19 @@ def run_eval(endpoint: str, is_smoke: bool = False) -> int:
         results.append((expected_label, status))
         print(f"{expected_label:28s} -> {status:20s} (outcome={outcome}, intent={intent})")
 
-    n_correct = sum(1 for label, status in results if label in VALID_INTENTS and status == "CORRECT")
-    print(f"\n{n_correct}/{len(VALID_INTENTS)} real intents correctly classified")
-    return n_correct
+    n_correct = sum(1 for label, status in results if label in valid_intents and status == "CORRECT")
+    print(f"\n{n_correct}/{len(valid_intents)} real intents correctly classified")
+    return n_correct, len(valid_intents)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--endpoint", required=True)
-    parser.add_argument("--smoke", action="store_true") 
+    parser.add_argument("--smoke", action="store_true", help="run 1/3 subset instead of full 30")
     args = parser.parse_args()
 
-    n_correct = run_eval(args.endpoint, is_smoke=args.smoke)
-    pass_rate = n_correct / len(VALID_INTENTS)
+    n_correct, n_total = run_eval(args.endpoint, smoke=args.smoke)
+    pass_rate = n_correct / n_total
     print(f"Pass rate: {pass_rate:.1%} (threshold: {THRESHOLD:.0%})")
 
     if pass_rate < THRESHOLD:
