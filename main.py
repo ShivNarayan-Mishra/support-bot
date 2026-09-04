@@ -12,9 +12,8 @@ from db import init_db, log_request
 
 GGUF_REPO_ID = "Etasha/support_bot_gguf"
 GGUF_FILENAME = "Llama-3.2-3B-Instruct.Q4_K_M.gguf" 
-MAX_NEW_TOKENS = 350  
-N_CTX = 2048  
-
+MAX_NEW_TOKENS = 400 
+N_CTX = 2048
 SYSTEM_PROMPT = (
     "You are a customer support assistant. For every user message, respond with ONLY a JSON object "
     "with keys: category, intent, reply. Do not include any text outside the JSON object. "
@@ -71,7 +70,7 @@ async def lifespan(app: FastAPI):
         repo_id=GGUF_REPO_ID,
         filename=GGUF_FILENAME,
         n_ctx=N_CTX,
-        n_threads=2,  # matches t3.large vCPU count
+        n_threads=2, 
         verbose=False,
     )
     print("Model loaded.")
@@ -130,6 +129,7 @@ def generate_structured_reply(user_query: str) -> tuple[dict | None, str]:
         messages=messages,
         max_tokens=MAX_NEW_TOKENS,
         temperature=0.3,
+        response_format={"type": "json_object"}, 
     )
     raw_output = output["choices"][0]["message"]["content"]
 
