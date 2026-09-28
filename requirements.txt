@@ -1,6 +1,9 @@
+huggingface_hub
 fastapi==0.115.0
 uvicorn==0.30.6
 pydantic==2.9.2
 sqlalchemy==2.0.35
-llama-cpp-python
-huggingface_hub
+llama-cpp-python==0.3.35
+prometheus-fastapi-instrumentator==7.0.0
+chromadb==0.5.20
+langgraph==1.2.11  

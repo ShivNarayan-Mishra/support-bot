@@ -10,6 +10,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends build-essential
 
 COPY requirements.txt .
 RUN uv pip install --system --no-cache-dir -r requirements.txt
-COPY main.py db.py ./
+
+COPY main.py db.py rag.py ingest.py ./
+COPY docs/ ./docs/
+
+# Bakes the Chroma vector store into the image at build time, from the docs shipped
+# above — deterministic, no network dependency at container startup. Chroma's
+# default embedding model (ONNX, not torch) downloads during this step, so build
+# needs network access, same as any other pip/model-fetch build step already in
+# this Dockerfile.
+RUN python3 ingest.py
 
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
