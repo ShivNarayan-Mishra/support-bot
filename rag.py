@@ -188,10 +188,9 @@ def retrieve_with_bounded_retry(llm, collection, user_query: str, seed: int | No
 def generate_grounded_reply(llm, user_query: str, candidates: list[dict], max_tokens: int = 400, seed: int | None = None) -> tuple[dict | None, str]:
     """
     Same shape as main.py's generate_structured_reply(), but the model gets one
-    candidate excerpt PER SOURCE DOCUMENT (see retrieve_top_chunk_per_doc) alongside the question, labeled
+    candidate excerpt PER SOURCE DOCUMENT alongside the question, labeled
     by source doc, and is instructed to use only the one(s) that actually answer it.
-    Reuses the same model for generation, not a separate one — per the plan's
-    "same model does double duty" design.
+    Reuses the same model for generation, not a separate one 
     """
     import json
 

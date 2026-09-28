@@ -1,5 +1,4 @@
 """
-Chroma ingestion for the RAG knowledge base — Day 14-15.
 
 Chunking decision (made deliberately, not defaulted): SECTION-SPLIT, not whole-document.
 Each of the 4 policy docs is split on its markdown `##` headers. Reasoning:
@@ -16,10 +15,6 @@ Each of the 4 policy docs is split on its markdown `##` headers. Reasoning:
     a chunk about "Return shipping costs" still carries the context that it's part of
     the Refund Policy, not a floating paragraph with no topic anchor.
 
-This is the same "don't over-engineer past the actual problem size" judgment already
-applied elsewhere in this project (SQLite over Postgres, Chroma over FAISS, EC2 over
-Kubernetes) — 4 docs don't need a production chunking pipeline (recursive splitters,
-overlap windows, token-based sizing). A plain header split is the right-sized tool here.
 """
 import re
 from pathlib import Path
@@ -79,9 +74,7 @@ def build_vector_store() -> None:
     """
     Uses get_or_create_collection + collection.upsert() (not .add()) — re-running this
     script after editing a doc updates the existing chunk IDs in place instead of
-    erroring on duplicates. This upsert mechanism is what the live POST /documents
-    endpoint (item 6) will reuse for re-ingesting a single doc without a full rebuild
-    or a redeploy.
+    erroring on duplicates. 
     """
     import chromadb  # imported here so chunk_markdown_by_section stays testable without chromadb installed
 
@@ -91,11 +84,7 @@ def build_vector_store() -> None:
         settings=Settings(anonymized_telemetry=False),
     )
     # No embedding_function specified -> Chroma's default, all-MiniLM-L6-v2, local,
-    # free, no API key. Matches the recommendation in chroma_langgraph_prep.md Part 4 —
-    # matches this project's existing cost-conscious pattern (GGUF over API calls, etc).
-    # hnsw:space="cosine" explicit, not the l2 default — makes retrieved "distance"
-    # convert to a clean 0-1 similarity score (1 - distance) for the retry-loop
-    # threshold in rag.py, instead of an unbounded, less-intuitive l2 number.
+    # free, no API key.
     collection = client.get_or_create_collection(
         name=COLLECTION_NAME,
         metadata={"hnsw:space": "cosine"},
