@@ -4,3 +4,9 @@ __pycache__/
 logs.db
 .env
 .dockerignore
+chroma_db/
+logs.db
+*.pem
+venv/
+__pycache__/
+.env
