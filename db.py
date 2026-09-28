@@ -1,9 +1,4 @@
-"""
-SQLAlchemy logging DB phase final piece.
 
-Several fields are nullable because RAG doesn't exist yet (retrieved_doc_id, retrieval_score, grounding_passed) — the
-schema is built wide now so no migration is needed later.
-"""
 from datetime import datetime, timezone
 from typing import Optional
 
