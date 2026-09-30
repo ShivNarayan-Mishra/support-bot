@@ -1,16 +1,3 @@
-"""
-Router + bounded retrieval retry loop — Day 14-15, items 2 and 3.
-
-Router (item 2): only genuinely general policy questions go to RAG. check_invoice/
-get_invoice deliberately excluded — already decided, not relitigated here — those need
-a specific customer's account record, which no static document can ever answer.
-
-Retry loop (item 3): retrieve -> check similarity score -> if below threshold,
-reformulate the query once via the LLM and retrieve again -> stop, capped at 2 total
-attempts. This is a real, bounded ReAct-style loop (retrieve/observe/act), deliberately
-capped rather than open-ended, for predictable latency/cost — consistent with everything
-else already decided in this project (Chroma over FAISS, EC2 over Kubernetes, etc).
-"""
 from pathlib import Path
 
 CHROMA_PATH = Path(__file__).parent / "chroma_db"
@@ -106,11 +93,7 @@ def retrieve_top_chunk_per_doc(collection, query_text: str) -> list[dict]:
     return candidates
 
 
-# Real, untuned guess (same honesty standard as SIMILARITY_THRESHOLD) — a lower bar
-# than SIMILARITY_THRESHOLD, which asks "is the best match good enough to trust at
-# all." This one asks "is this OTHER per-doc candidate even plausibly related,"
-# filtered out BEFORE the model sees it. Added after a real, observed failure: with
-# no filter, the model was handed 4 excerpts unconditionally and — being a small
+# the model was handed 4 excerpts unconditionally and — being a small
 # model without strong selective-synthesis ability — tried to address all 4
 # regardless of relevance (a query with zero cancellation content still got a
 # cancellation-fee paragraph, because the excerpt was simply there to use).

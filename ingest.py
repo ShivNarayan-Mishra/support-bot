@@ -1,21 +1,4 @@
-"""
 
-Chunking decision (made deliberately, not defaulted): SECTION-SPLIT, not whole-document.
-Each of the 4 policy docs is split on its markdown `##` headers. Reasoning:
-  - Each doc already has 4-5 distinct, narrow sub-topics (e.g. refund_policy.md has
-    "Return window", "Item condition", "Refund processing", "Return shipping costs",
-    "Non-returnable items") that a single user question usually only needs ONE of.
-  - Embedding the whole document as one vector would average across all of those
-    sub-topics — exactly the "long-text-averages-out-the-specific-fact" problem
-    flagged in chroma_langgraph_prep.md Part 3 — bad for retrieval precision on a
-    short, specific question like "how long is the return window."
-  - The docs are short enough (4-5 sections each, a few sentences per section) that
-    section-level chunks are still coherent, self-contained units, not fragments.
-  - Each chunk is prefixed with "{doc title} — {section title}" before embedding, so
-    a chunk about "Return shipping costs" still carries the context that it's part of
-    the Refund Policy, not a floating paragraph with no topic anchor.
-
-"""
 import re
 from pathlib import Path
 

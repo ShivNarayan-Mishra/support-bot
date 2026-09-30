@@ -1,5 +1,3 @@
-"""Adapted from the original Colab eval cell to hit /predict over HTTP instead of
-calling the model directly, so it can run standalone against a deployed instance."""
 
 import argparse
 import sys
