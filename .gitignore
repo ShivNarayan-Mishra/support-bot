@@ -16,3 +16,4 @@ logs.db
 venv/
 __pycache__/
 .env
+.vscode/
